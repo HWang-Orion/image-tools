@@ -127,3 +127,14 @@ dmypy.json
 
 # Pyre type checker
 .pyre/
+
+# .lh folder
+.lh/
+
+# watermark files
+wm/
+
+# image operation folder
+img/
+
+*.jpg
