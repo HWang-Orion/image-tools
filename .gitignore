@@ -131,6 +131,9 @@ dmypy.json
 # .lh folder
 .lh/
 
+# Jetbrains PyCharm
+.idea/
+
 # watermark files
 wm/
 

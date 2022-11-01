@@ -76,17 +76,16 @@ def read_images(path: str) -> List[np.ndarray]:
     img_names = os.listdir(path)
     num_of_images = len(img_names)
     print(f"{len(os.listdir(path))} image(s) founded in {path}.")
-    pbar = tqdm(desc="Loading images", total=num_of_images)
-    for imname in img_names:
-        images.append(os.path.join(path, imname))
+    for imname in tqdm(img_names, desc="Loading images", total=num_of_images):
+        images.append(cv.imread(os.path.join(path, imname)))
     return images
 
 
-def check_folder_size(path: str,) -> int:
+def check_folder_size(path: str,) -> float:
     size = 0
     try:
         for ele in os.scandir(path):
             size += os.stat(ele).st_size
-        return size/1e9
+        return size / 1e9
     except FileNotFoundError:
         raise ValueError("Invalid path given: " + path)

@@ -76,6 +76,7 @@ def add_wm_to_img(img: np.ndarray, wm_type: str, wm_img: np.ndarray, loc: Tuple[
     return img
 """
 
+
 def add_wm_to_img(img: np.ndarray, wm: np.ndarray, wm_scale: float, wm_ori: float, pos: Tuple[float, float]) -> np.ndarray:
     # scale: relative to the image
     assert len(img.shape) == 3
@@ -97,20 +98,35 @@ def add_wm_to_img(img: np.ndarray, wm: np.ndarray, wm_scale: float, wm_ori: floa
     wm = crop_nonzero(wm)
     
     wm_center = height * pos[0], width * pos[1]
-    pos_judgements = [wm_center[0] < wm.shape[0], wm_center[0] > height - wm.shape[0], wm_center[1] < wm.shape[1], wm_center[1] > width - wm.shape[1]]
+    pos_judgements = [wm_center[0] < wm.shape[0]/2, wm_center[0] > height - wm.shape[0]/2,
+                      wm_center[1] < wm.shape[1]/2, wm_center[1] > width - wm.shape[1]/2]
     if True in pos_judgements:
         # watermark get out of boundary
-        # todo relocate the watermark
-        pass
-    else:
-        # get the region of interest and add watermark; replace the corresponding part in the image with the RoI again
-        roi = img[int(height * pos[0]): int(height * pos[0]) + wm.shape[0], int(width * pos[1]): int(width * pos[1]) + wm.shape[1], 0:3]
-        # todo adaptative watermark
-        roi = np.where(wm[:, :, -1:] == 0, roi, wm[:, :, 0:3])
-        img[int(height * pos[0]): int(height * pos[0]) + wm.shape[0], int(width * pos[1]): int(width * pos[1]) + wm.shape[1], 0:3] = roi
+
+        # the case when the watermark could not fit the entire image
+        if (pos_judgements[0] and pos_judgements[1]) or (pos_judgements[2] and pos_judgements[3]):
+            raise ValueError("Improper position given for the watermark")
+
+        # four cases when the watermark gets out of boundary -> shift back
+        if pos_judgements[0]:
+            wm_center[0] += (wm_center[0] - wm.shape[0] / 2)
+        if pos_judgements[1]:
+            wm_center[0] -= (wm_center[0] - wm.shape[0] / 2)
+        if pos_judgements[2]:
+            wm_center[1] += (wm_center[1] - wm.shape[1] / 2)
+        if pos_judgements[3]:
+            wm_center[1] -= (wm_center[1] - wm.shape[1] / 2)
+
+    # get the region of interest and add watermark; replace the corresponding part in the image with the RoI again
+    roi = img[int(height * pos[0]): int(height * pos[0]) + wm.shape[0],
+              int(width * pos[1]): int(width * pos[1]) + wm.shape[1], 0:3]
+    # todo adaptative watermark
+    roi = np.where(wm[:, :, -1:] == 0, roi, wm[:, :, 0:3])
+    img[int(height * pos[0]): int(height * pos[0]) + wm.shape[0],
+        int(width * pos[1]): int(width * pos[1]) + wm.shape[1], 0:3] = roi
+
     return img
     
-
 
 def crop_nonzero(image: np.ndarray):
     # borrowed from https://stackoverflow.com/a/59208291
@@ -139,13 +155,14 @@ def add_watermark(wm: np.ndarray, images: Union[np.ndarray, List[np.ndarray]], *
     wm_ori = kwargs["wm_ori"] if "wm_ori" in kwargs.keys() else "random"
     if wm_ori != "random":
         wm_ori %= 360
-    
-    
+
+    images_ = []
+
     for img in images:
         if wm_pos == "random":
             wm_pos = (np.random.rand(), np.random.rand())
         if wm_ori == "random":
             wm_ori = np.random.random() * 180 - 90
-        img = add_wm_to_img(img, wm, wm_scale, wm_ori, wm_pos)
-    
-    return images if len(images) > 1 else images[0]
+        images_.append(add_wm_to_img(img, wm, wm_scale, wm_ori, wm_pos))
+
+    return images_ if len(images_) > 1 else images_[0]
