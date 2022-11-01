@@ -1,115 +1,113 @@
-from typing import Dict, Tuple
-import numpy as np
 import cv2 as cv
+import numpy as np
 import argparse
 import os
-from tqdm import tqdm
+import time
+import tqdm
 
-from typing import Tuple, Dict, Union
+import utils
+from functions import *
+
+THRESHOLD = 16  # threshold of the maximum image folder size (for program automatic mode check only)
 
 
-def add_wm_to_img(img: np.ndarray, wm_info: Dict, wm_type: str, loc: Tuple[float, float, str] = (0.97, 0.02, "upper left"), wm_scale: Union[float, Tuple[float, float]] = 0.0125) -> np.ndarray:
-    height, width, channels = img.shape
-    # todo tuple of wm sizes
-    wm_scale = np.array(wm_scale)
-    assert 0 < wm_scale.all() <= 1 and len(wm_scale) <= 2, ValueError("Invalid watermark scale inputs!")
-    if "app" in wm_type:
-        if loc is not None:
-            assert 0 <= loc[0] <= 1 and 0 <= loc[1] <= 1, ValueError("Invalid location")
-            assert loc[2] in ("center", "upper left", "lower left")
-        else:
-            loc = (np.random.rand(), np.random.rand(), "upper left")
-        # only treat position as upper left corner for now
-        if 'apparent_wm' in wm_info.keys() and wm_info['apparent_wm'] is not None:
-            # adding apparent water mark
-            app_img = np.copy(wm_info['apparent_wm'])
-            app_img_ratio = app_img.shape[1]  / app_img.shape[0]
-            s = wm_scale[0] if len(wm_scale) == 2 else wm_scale
-            app_img_height = int(height * s)
-            app_img = cv.resize(app_img, (int(app_img_height * app_img_ratio), app_img_height))
-            roi = img[int(height * loc[0]): int(height * loc[0]) + app_img.shape[0], 
-                      int(width * loc[1]): int(width * loc[1]) + app_img.shape[1], 
-                      0:3]
-            roi = np.where(app_img[:, :, -1:] == 0, roi, app_img[:, :, 0:3])
-            img[int(height * loc[0]): int(height * loc[0]) + app_img.shape[0], 
-                int(width * loc[1]): int(width * loc[1]) + app_img.shape[1], 
-                0:3] = roi
-    if "dark" in wm_type and wm_info['dark_wm'] is not None:
-        loc = (np.random.rand() * 0.8 + 0.1, np.random.rand() * 0.8 + 0.1, "upper left")
-        if isinstance(wm_info['dark_wm'], np.ndarray):
-            dk_img = wm_info['dark_wm']
-            # this is an array
-            try:
-                diag = wm_info['dark_wm_diag']
-            except KeyError:
-                diag = int(np.linalg.norm(wm_info['dark_wm'].shape[0:2]))
-            finally:
-                center = (dk_img.shape[0]/2, dk_img.shape[1]/2)
-                angle = np.random.rand() * 180 - 90
-                s = wm_scale[1] if len(wm_scale) == 2 else wm_scale
-                rot_matrix = cv.getRotationMatrix2D(center, angle, s)
-                rotated_dk_img = cv.warpAffine(dk_img, rot_matrix, (diag + 400, diag + 400))
-                rotated_dk_img = crop_nonzero(rotated_dk_img)
-                # cv.imshow("dark", rotated_dk_img)
-                # print(rotated_dk_img[:, :, -1])
-                roi = img[int(height * loc[0]): int(height * loc[0]) + rotated_dk_img.shape[0], 
-                      int(width * loc[1]): int(width * loc[1]) + rotated_dk_img.shape[1], 
-                      0:3]
-                # todo change the opacity of the wm
-                roi = np.where(rotated_dk_img[:, :, -1:] == 0, roi, rotated_dk_img[:, :, 0:3])
-                img[int(height * loc[0]): int(height * loc[0]) + rotated_dk_img.shape[0], 
-                    int(width * loc[1]): int(width * loc[1]) + rotated_dk_img.shape[1], 
-                    0:3] = roi
-                # print(loc[0], loc[1])
-        elif isinstance(wm_info['dark_wm'], str):
-            # this is a string
-            pass
+def main(args):
+    steps_finished = 0
+    steps_to_do = int(args.add_watermark) + int(args.resize) + int(args.padding)
+    base_path = os.getcwd()
+    img_path = os.path.join(base_path, args.image_path)
+    assert os.path.exists(img_path), ValueError("Wrong image path given: " + img_path)
     
-    return img
-
-
-def crop_nonzero(image: np.ndarray):
-    # borrowed from https://stackoverflow.com/a/59208291
-    y_nonzero, x_nonzero, _ = np.nonzero(image)
-    return image[np.min(y_nonzero):np.max(y_nonzero), np.min(x_nonzero):np.max(x_nonzero)]
+    run_mode = args.run_mode
+    if run_mode == "check_first":
+        if utils.check_folder_size(img_path) >= THRESHOLD:
+            run_mode = "use_temp"
+        else:
+            run_mode = "direct_output"
+    if run_mode == "use_temp":
+        temp_dir = os.path.join(base_path, str(time.time()))
+        os.mkdir(temp_dir)
+    if run_mode == "direct_output":
+        images = utils.read_images(img_path)
+    
+    assert 1 <= args.output_quality <= 100, ValueError(f"Output quality must be in $[1, 100]$, but got {args.output_quality} instead.")
+    
+    out_path = os.path.join(base_path, args.output_path)
+    if not os.path.exists(out_path):
+        os.mkdir(out_path)
+    
+    if args.add_watermark:
+        steps_finished += 1
+        wm_path = os.path.join(os.getcwd(), args.wm_folder)
+        if args.watermark_mode == "preset_watermarks":
+            assert os.path.exists(wm_path), ValueError("Watermark path not found!")
+            wm_ = ""
+            if not args.no_apparent:
+                wm_ += "apparent"
+            if not args.no_dark:
+                wm_ += "dark"
+            if run_mode == "use_temp":
+                for img in tqdm(os.listdir(img_path)):
+                    # add watermark here
+                    pass
+        elif args.watermark_mode == "text":
+            assert len(args.dark_wm_text), ValueError("Watermark text invalid!")
+            # todo add text watermarks
+        else:
+            raise ValueError("Wrong watermark mode given!")
+    
+    if args.resize:
+        steps_finished += 1
+        assert args.resize_resolution in ['4k', '2k', '8k'], ValueError("Invalid resolution given!")
+        # todo do some resize
+    
+    if args.padding:
+        # todo add padding
+        ...
+        
 
 
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser()
-    parser.add_argument('--image_folder', type=str, default='img/', help="Image folder")
+    parser = argparse.ArgumentParser(description="Argument for image-tools")
+    
+    # functions
+    parser.add_argument("--add_watermark", action="store_true", default=False, help="Add watermarks for images")
+    parser.add_argument("--resize", action="store_true", default=False, help="Resize for the images")
+    parser.add_argument("--padding", action="store_true", default=False, help="Padding the images (for, e.g., instagram)")
+    
+    # general options
+    parser.add_argument('--image_path', type=str, default='img/', help="Image folder (relative path)", required=False)
+    parser.add_argument('--output_type', type=str, default='jpg', required=False)
+    parser.add_argument('--output_path', type=str, default='output', required=False)
+    parser.add_argument('--output_quality', type=int, default=100, help='quality of output images', required=False)
+    
+    # details for watermark
+    parser.add_argument('--watermark_mode', type=str, default='preset_watermarks', help="watermarking modes", choices=("preset_watermarks", "text"))
+    parser.add_argument('--no_apparent', action="store_true", help="No apparent watermark")
+    parser.add_argument('--no_dark', action="store_true", help="No dark (hard-to-find) watermark")
     parser.add_argument('--wm_folder', type=str, default='wm/', required=False, help="Watermark folder, if you want to use preset images.")
     parser.add_argument('--apparent_wm_filename', type=str, default='apparent_wm.png', required=False)
+    parser.add_argument('--apparent_wm_location', type=str, default='lower left', help="apparent watermark location")
+    parser.add_argument('--apparent_wm_orientation', type=str, default='0', help="apparent watermark orientation, default: 0")
+    parser.add_argument('--apparent_wm_scale', type=float, default=0.0125, help="apparent watermark relative scale, default: 0.0125")
+    
     parser.add_argument('--dark_wm_filename', type=str, default='dark_wm.png', required=False)
-    parser.add_argument('--dark_wm_text', type=str, default='Photo by ...', required=False)
-    parser.add_argument('--output_type', type=str, default='jpg', required=False)
-    parser.add_argument('--output_folder', type=str, default='output', required=False)
+    parser.add_argument('--dark_wm_text', type=str, default='', required=False)
+    parser.add_argument('--adaptative_dark', action="store_true", help="Adaptatively add dark watermarks to fit the background color")
     
-    args = parser.parse_args()
-    wm_info = {}
+    # details for resize/crop
+    parser.add_argument('--resize_resolution', type=str, default='16:9', choices=['4k', '2k', '8k'], help='Resize resolution ratio')
+    parser.add_argument('--change_aspect_ratio', action='store_true', help="Change aspect ratio to adapt to the resolution when input images do not fit that")
+    parser.add_argument('--center_crop', action="store_true", help="Center crop to get the target resolution directly")
     
-    wm_path = os.path.join(os.getcwd(), args.wm_folder)
-    wms = os.listdir(wm_path)
-    if not args.dark_wm_filename in wms:
-        wm_info['dark_wm'] = args.dark_wm_text if args.dark_wm_text else None
-    else:
-        wm_info['dark_wm'] = cv.imread(os.path.join(wm_path, args.dark_wm_filename), cv.IMREAD_UNCHANGED)
-        wm_info['dark_wm_diag'] = int(np.linalg.norm(wm_info['dark_wm'].shape[0:2]))
-    if not args.apparent_wm_filename in wms:
-        wm_info['apparent_wm'] = None
-    else:
-        wm_info['apparent_wm'] = cv.imread(os.path.join(wm_path, args.apparent_wm_filename), cv.IMREAD_UNCHANGED)
-        
+    # details for padding
+    parser.add_argument('--padding_mode', type=str, default='all', help='padding on all sizes or up/down/left/right only')
+    parser.add_argument('--target_aspect_ratio', type=str, default='1:1', help='Target aspect ratio')
+    parser.add_argument('--padding_color', type=str, default='white', help='padding color')
     
-    image_path = os.path.join(os.getcwd(), args.image_folder)
-    out_path = os.path.join(os.getcwd(), args.output_folder)
-    if not os.path.isdir(out_path):
-        os.mkdir(out_path)
+    # running mode
+    parser.add_argument('--run_mode', type=str, default='check_first', choices=("direct_output", "use_temp", "check_first"), 
+                        help="Run the script with one-read-one-write mode (direct_output), use temp folders (use_temp) or let the script determine itself.")
     
-    print(f"{len(os.listdir(image_path))} image(s) founded in {image_path}.")
-    for img in tqdm(os.listdir(image_path)):
-        im = cv.imread(os.path.join(image_path, img))
-        if args.output_type == "jpg":
-            cv.imwrite(os.path.join(out_path, img), add_wm_to_img(im, wm_info, "app+dark", wm_scale=(0.0125, 0.15)), [int(cv.IMWRITE_JPEG_QUALITY), 100])
-    
-    print(f"Job finished. Output folder: {out_path}.")
-    # cv.waitKey(0)
+    args_ = parser.parse_args()
+    # main(args_)
