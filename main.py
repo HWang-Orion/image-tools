@@ -83,8 +83,9 @@ def main(args):
                     images_.append(im)
                 images = images_
         elif args.watermark_mode == "text":
-            assert len(args.dark_wm_text), ValueError("Watermark text invalid!")
+            assert len(args.dark_wm_text) > 0, ValueError("Watermark text invalid!")
             # todo add text watermarks
+            raise NotImplementedError("This approach is not implemented yet.")
         else:
             raise ValueError("Wrong watermark mode given!")
     
@@ -122,7 +123,15 @@ def main(args):
 
     if args.padding:
         # todo add padding
-        ...
+        print("\n--------------------------------")
+        print("            Padding            ")
+        print("--------------------------------\n")
+        steps_finished += 1
+        asp_ratio = args.target_aspect_ratio.split(':')
+        if len(asp_ratio) != 2:
+            raise ValueError("Wrong aspect ratio, form x:y is expected, got " + args.target_aspect_ratio + ' instead.')
+        if run_mode == "one_by_one":
+            pass
         
 
 if __name__ == '__main__':
@@ -161,9 +170,11 @@ if __name__ == '__main__':
     parser.add_argument('--center_crop', action="store_true", help="Center crop to get the target resolution directly")
     
     # details for padding
-    parser.add_argument('--padding_mode', type=str, default='all', help='padding on all sizes or up/down/left/right only')
+    parser.add_argument('--padding_mode', type=str, default='all', help='padding on all sizes or top/bottom/left/right only', 
+                        choices=("all", "top", "bottom", "left", "right"))
     parser.add_argument('--target_aspect_ratio', type=str, default='1:1', help='Target aspect ratio')
-    parser.add_argument('--padding_color', type=str, default='white', help='padding color')
+    parser.add_argument('--padding_color', type=str, default='white', help='padding color', 
+                        choices=("white", "black"))
     
     # running mode
     parser.add_argument('--run_mode', type=str, default='check_first', choices=("together", "one_by_one", "check_first"),
