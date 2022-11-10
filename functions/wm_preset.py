@@ -1,6 +1,7 @@
 import cv2 as cv
 import numpy as np
 from typing import Union, List, Dict, Tuple
+from tqdm import tqdm
 
 
 pos_x_dict = {
@@ -85,19 +86,19 @@ def add_wm_to_img(img: np.ndarray, wm: np.ndarray, wm_scale: float, wm_ori: floa
     
     if wm.shape[2] == 1:
         wm = np.tile(wm, (1, 1, 3))
-    if wm.shape[2] != 3:
+    if wm.shape[2] == 2:
         raise ValueError(f"Wrong watermark image given! Expected to get one or three channels but got {wm.shape[2]} instead")
     # wm = cv.resize(wm, (int(wm.shape[0] * wm_scale), int(wm.shape[1] * wm_scale)))
     
-    # watermark rotation
+    # watermark rotation and scaling
     center = (wm.shape[0]/2, wm.shape[1]/2)
     wm_diag = np.sqrt(wm.shape[0] ** 2 + wm.shape[1] ** 2)
     wm_scale = wm_scale * im_diag / wm_diag  # change it to the scale w.r.t. the watermark size
-    rot_matrix = cv.getRotationMatrix2D(center, wm_ori, wm_scale)
-    wm = cv.warpAffine(wm, rot_matrix, (int(wm_diag), int(wm_diag)))
+    rot_matrix = cv.getRotationMatrix2D(center, wm_ori, wm_scale)  # wm_scale: absolute
+    wm = cv.warpAffine(wm, rot_matrix, (int(wm_diag) + 400, int(wm_diag) + 400))
     wm = crop_nonzero(wm)
     
-    wm_center = height * pos[0], width * pos[1]
+    wm_center = [height * pos[0], width * pos[1]]
     pos_judgements = [wm_center[0] < wm.shape[0]/2, wm_center[0] > height - wm.shape[0]/2,
                       wm_center[1] < wm.shape[1]/2, wm_center[1] > width - wm.shape[1]/2]
     if True in pos_judgements:
@@ -109,13 +110,13 @@ def add_wm_to_img(img: np.ndarray, wm: np.ndarray, wm_scale: float, wm_ori: floa
 
         # four cases when the watermark gets out of boundary -> shift back
         if pos_judgements[0]:
-            wm_center[0] += (wm_center[0] - wm.shape[0] / 2)
+            wm_center[0] += wm_center[0] - wm.shape[0] / 2
         if pos_judgements[1]:
-            wm_center[0] -= (wm_center[0] - wm.shape[0] / 2)
+            wm_center[0] -= wm_center[0] - wm.shape[0] / 2
         if pos_judgements[2]:
-            wm_center[1] += (wm_center[1] - wm.shape[1] / 2)
+            wm_center[1] += wm_center[1] - wm.shape[1] / 2
         if pos_judgements[3]:
-            wm_center[1] -= (wm_center[1] - wm.shape[1] / 2)
+            wm_center[1] -= wm_center[1] - wm.shape[1] / 2
 
     # get the region of interest and add watermark; replace the corresponding part in the image with the RoI again
     roi = img[int(height * pos[0]): int(height * pos[0]) + wm.shape[0],
@@ -134,6 +135,10 @@ def crop_nonzero(image: np.ndarray):
     return image[np.min(y_nonzero):np.max(y_nonzero), np.min(x_nonzero):np.max(x_nonzero)]
 
 
+def randrange(a: float, b: float):
+    return np.random.rand() * (b - a) + a
+
+
 def add_watermark(wm: np.ndarray, images: Union[np.ndarray, List[np.ndarray]], **kwargs) -> Union[np.ndarray, List[np.ndarray]]:
     if isinstance(images, np.ndarray):
         images = [images]
@@ -150,19 +155,19 @@ def add_watermark(wm: np.ndarray, images: Union[np.ndarray, List[np.ndarray]], *
         else:
             raise ValueError("Invalid position!")
     
-    wm_scale = kwargs["wm_scale"] if "wm_scale" in kwargs.keys() else 0.0125
+    wm_scale = kwargs["wm_scale"] if "wm_scale" in kwargs.keys() else 0.0625
     
     wm_ori = kwargs["wm_ori"] if "wm_ori" in kwargs.keys() else "random"
     if wm_ori != "random":
-        wm_ori %= 360
+        wm_ori = float(wm_ori) % 360
 
     images_ = []
 
-    for img in images:
+    for img in tqdm(images):
         if wm_pos == "random":
-            wm_pos = (np.random.rand(), np.random.rand())
+            wm_pos = (randrange(0.15, 0.85), randrange(0.15, 0.85))
         if wm_ori == "random":
             wm_ori = np.random.random() * 180 - 90
         images_.append(add_wm_to_img(img, wm, wm_scale, wm_ori, wm_pos))
 
-    return images_ if len(images_) > 1 else images_[0]
+    return images_ if len(images_) > 1 or isinstance(images, list) else images_[0]

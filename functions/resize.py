@@ -5,7 +5,7 @@ from typing import Tuple
 
 def resize(img: np.ndarray, resol: Tuple[int, int],
            change_aspect_ratio: bool = False, center_crop: bool = False) -> np.ndarray:
-    target_asp_ratio = resol[1] / resol[0]
+    target_asp_ratio = resol[1] / resol[0]  # resol example (2160, 3840)
     height, width, channels = img.shape
     sr_flag = False
     if width < resol[1] or height < resol[0]:
@@ -14,18 +14,15 @@ def resize(img: np.ndarray, resol: Tuple[int, int],
               " Enlarging might not yield desired output.")
     img_asp_ratio = width / height
     if not center_crop:
-        if abs(img_asp_ratio - target_asp_ratio) < 1e-3:
-            return cv.resize(img, resol, interpolation=cv.INTER_CUBIC)
+        if abs(img_asp_ratio - target_asp_ratio) < 1e-3 or change_aspect_ratio:
+            resol_ = resol if img_asp_ratio <= 1 else (resol[1], resol[0])
+            return cv.resize(img, resol_, interpolation=cv.INTER_CUBIC)
         else:
-            if change_aspect_ratio:
-                print("Aspect ratio does not fit well. The output image may look strange.")
-                return cv.resize(img, resol, interpolation=cv.INTER_CUBIC)
-            else:
-                # match shorter dimension
-                if img_asp_ratio >= 1:  # width > height
-                    return cv.resize(img, [resol[0] * img_asp_ratio, resol[1]], interpolation=cv.INTER_CUBIC)
-                else:  # height > width
-                    return cv.resize(img, [resol[0], resol[1] / img_asp_ratio], interpolation=cv.INTER_CUBIC)
+            # match longer dimension
+            if img_asp_ratio >= 1:  # width > height, match width
+                return cv.resize(img, (int(resol[1] * img_asp_ratio), resol[1]), interpolation=cv.INTER_CUBIC)
+            else:  # height > width
+                return cv.resize(img, (int(resol[0]), int(resol[0] / img_asp_ratio)), interpolation=cv.INTER_CUBIC)
     else:
         # crop and change aspect ratio
         if not sr_flag:

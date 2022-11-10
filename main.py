@@ -3,6 +3,7 @@ import numpy as np
 import argparse
 import os
 import time
+from colorama import Fore, Style
 from tqdm import tqdm
 
 import utils
@@ -17,6 +18,12 @@ def main(args):
     base_path = os.getcwd()
     img_path = os.path.join(base_path, args.image_path)
     assert os.path.exists(img_path), ValueError("Wrong image path given: " + img_path)
+
+    # check num of images first
+    files = os.listdir(img_path)
+    image_files = list(filter(lambda x: x.endswith('.jpg'), files))
+    print(Fore.GREEN + f"{len(image_files)} image(s) founded in {img_path}.")
+    print(Style.RESET_ALL)
     
     run_mode = args.run_mode
     assert run_mode in ("together", "one_by_one", "check_first")
@@ -25,11 +32,8 @@ def main(args):
             run_mode = "one_by_one"
         else:
             run_mode = "together"
-    if run_mode == "one_by_one":
-        temp_dir = os.path.join(base_path, str(time.time()))
-        os.mkdir(temp_dir)
-    else:
-        images = utils.read_images(img_path)
+    if run_mode == "together":
+        images = utils.read_images(img_path, image_files)
     
     assert 1 <= args.output_quality <= 100, ValueError(f"Output quality must be in $[1, 100]$, but got {args.output_quality} instead.")
     
@@ -47,7 +51,7 @@ def main(args):
             assert os.path.exists(wm_path), ValueError("Watermark path not found!")
             if not args.no_apparent:
                 try:
-                    wm_app = cv.imread(os.path.join(wm_path, args.apparent_wm_filename))
+                    wm_app = cv.imread(os.path.join(wm_path, args.apparent_wm_filename), cv.IMREAD_UNCHANGED)
                 except FileNotFoundError:
                     raise ValueError("Apparent watermark not found!")
                 wm_app_pos = args.apparent_wm_position
@@ -55,14 +59,15 @@ def main(args):
                 wm_app_scl = args.apparent_wm_scale
             if not args.no_dark:
                 try:
-                    wm_dark = cv.imread(os.path.join(wm_path, args.dark_wm_filename))
+                    wm_dark = cv.imread(os.path.join(wm_path, args.dark_wm_filename), cv.IMREAD_UNCHANGED)
                 except FileNotFoundError:
                     raise ValueError("Dark watermark not found!")
                 wm_dark_scl = args.dark_wm_scale
             if run_mode == "one_by_one":
-                print("Please do not modify the output folder including its contents: " + out_path)
+                print(Fore.YELLOW + "Please do not modify the output folder including its contents: " + out_path)
+                print(Style.RESET_ALL)
                 for img in tqdm(os.listdir(img_path)):
-                    im = cv.imread(os.path.join(img_path, img))
+                    im = cv.imread(os.path.join(img_path, img), cv.IMREAD_UNCHANGED)
                     if not args.no_apparent:
                         im = wm_preset.add_watermark(wm_app, im,
                                                       wm_pos=wm_app_pos, wm_scale=wm_app_scl, wm_ori=wm_app_ori)
@@ -73,15 +78,11 @@ def main(args):
                     cv.imwrite(os.path.join(out_path, img), im, [int(cv.IMWRITE_JPEG_QUALITY), quality])
                 img_path = out_path
             else:
-                images_ = []
-                for im in images:
-                    if not args.no_apparent:
-                        im = wm_preset.add_watermark(wm_app, im,
-                                                     wm_pos=wm_app_pos, wm_scale=wm_app_scl, wm_ori=wm_app_ori)
-                    if not args.no_dark:
-                        im = wm_preset.add_watermark(wm_dark, im, wm_scale=wm_dark_scl)
-                    images_.append(im)
-                images = images_
+                if not args.no_apparent:
+                    images = wm_preset.add_watermark(wm_app, images,
+                                                 wm_pos=wm_app_pos, wm_scale=wm_app_scl, wm_ori=wm_app_ori)
+                if not args.no_dark:
+                    images = wm_preset.add_watermark(wm_dark, images, wm_scale=wm_dark_scl)
         elif args.watermark_mode == "text":
             assert len(args.dark_wm_text) > 0, ValueError("Watermark text invalid!")
             # todo add text watermarks
@@ -110,14 +111,17 @@ def main(args):
         else:
             raise ValueError("Unknown resize resolution!")
         if run_mode == 'one_by_one':
-            print("Please do not modify the output folder including its contents: " + out_path)
+            print(Fore.YELLOW + "Please do not modify the output folder including its contents: " + out_path)
+            print(Style.RESET_ALL)
+            quality = 100 if steps_finished != steps_to_do else args.output_quality
             for img in tqdm(os.listdir(img_path)):
                 im = cv.imread(os.path.join(img_path, img))
                 im = resize.resize(im, resol, args.change_aspect_ratio, args.center_crop)
-                cv.imwrite(im, os.path.join(out_path, img))
+                cv.imwrite(os.path.join(out_path, img), im, [int(cv.IMWRITE_JPEG_QUALITY), quality])
+            img_path = out_path
         else:
             images_ = []
-            for img in images:
+            for img in tqdm(images):
                 images_.append(resize.resize(img, resol, args.change_aspect_ratio, args.center_crop))
             images = images_
 
@@ -130,9 +134,28 @@ def main(args):
         asp_ratio = args.target_aspect_ratio.split(':')
         if len(asp_ratio) != 2:
             raise ValueError("Wrong aspect ratio, form x:y is expected, got " + args.target_aspect_ratio + ' instead.')
+        assert args.border >= 0, "Border must be positive!"
+        asp_ratio = [float(asp_ratio[0]), float(asp_ratio[1])]
         if run_mode == "one_by_one":
-            pass
-        
+            print(Fore.YELLOW + "Please do not modify the output folder including its contents: " + out_path)
+            print(Style.RESET_ALL)
+            quality = 100 if steps_finished != steps_to_do else args.output_quality
+            for img in tqdm(os.listdir(img_path)):
+                im = cv.imread(os.path.join(img_path, img))
+                im = padding.padding(im, asp_ratio, args.border, True if args.padding_color == "white" else False)
+                cv.imwrite(os.path.join(out_path, img), im, [int(cv.IMWRITE_JPEG_QUALITY), quality])
+        else:
+            images_ = []
+            for img in tqdm(images):
+                images_.append(padding.padding(img, asp_ratio, args.border, True if args.padding_color == "white" else False))
+            images = images_
+
+    if run_mode == "together":
+        for (img, img_name) in zip(images, image_files):
+            cv.imwrite(os.path.join(out_path, img_name), img, [int(cv.IMWRITE_JPEG_QUALITY), args.output_quality])
+
+    print(Fore.GREEN + f"Output finished at " + out_path + f' with {len(image_files)} images.')
+
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description="Argument for image-tools")
@@ -156,10 +179,10 @@ if __name__ == '__main__':
     parser.add_argument('--apparent_wm_filename', type=str, default='apparent_wm.png', required=False)
     parser.add_argument('--apparent_wm_position', type=str, default='lower left', help="apparent watermark location")
     parser.add_argument('--apparent_wm_orientation', type=str, default='0', help="apparent watermark orientation, default: 0")
-    parser.add_argument('--apparent_wm_scale', type=float, default=0.0125, help="apparent watermark relative scale, default: 0.0125")
+    parser.add_argument('--apparent_wm_scale', type=float, default=0.0625, help="apparent watermark relative scale, default: 0.0125")
     
     parser.add_argument('--dark_wm_filename', type=str, default='dark_wm.png', required=False)
-    parser.add_argument('--dark_wm_scale', type=float, default=0.0125, required=False)
+    parser.add_argument('--dark_wm_scale', type=float, default=0.0625, required=False)
     parser.add_argument('--dark_wm_text', type=str, default='', required=False)
     parser.add_argument('--adaptative_dark', action="store_true", help="Adaptatively add dark watermarks to fit the background color")
     
@@ -170,8 +193,7 @@ if __name__ == '__main__':
     parser.add_argument('--center_crop', action="store_true", help="Center crop to get the target resolution directly")
     
     # details for padding
-    parser.add_argument('--padding_mode', type=str, default='all', help='padding on all sizes or top/bottom/left/right only', 
-                        choices=("all", "top", "bottom", "left", "right"))
+    parser.add_argument('--border', type=float, default=0., help='padding on edges that has no expansion, in percentage')
     parser.add_argument('--target_aspect_ratio', type=str, default='1:1', help='Target aspect ratio')
     parser.add_argument('--padding_color', type=str, default='white', help='padding color', 
                         choices=("white", "black"))
@@ -181,4 +203,4 @@ if __name__ == '__main__':
                         help="Deal with the images together or one-read-one-write or let the script determine itself.")
     
     args_ = parser.parse_args()
-    # main(args_)
+    main(args_)

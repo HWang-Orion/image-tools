@@ -71,13 +71,10 @@ from tqdm import tqdm
 #     return image[np.min(y_nonzero):np.max(y_nonzero), np.min(x_nonzero):np.max(x_nonzero)]
 
 
-def read_images(path: str) -> List[np.ndarray]:
+def read_images(path: str, image_filenames: List[str]) -> Tuple[List[np.ndarray], List[str]]:
     images = []
-    img_names = os.listdir(path)
-    num_of_images = len(img_names)
-    print(f"{len(os.listdir(path))} image(s) founded in {path}.")
-    for imname in tqdm(img_names, desc="Loading images", total=num_of_images):
-        images.append(cv.imread(os.path.join(path, imname)))
+    for imname in tqdm(image_filenames, desc="Loading images", total=len(image_filenames)):
+        images.append(cv.imread(os.path.join(path, imname), cv.IMREAD_UNCHANGED))
     return images
 
 
