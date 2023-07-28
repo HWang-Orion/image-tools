@@ -53,7 +53,7 @@ cv::Mat _processImage(const std::string& inputPath, const std::string& outputPat
     cv::Mat img = _readTiffImage(inputPath, true);
     img = _imageColorSpaceConvert(img, CV_8U);
     img = _ImageSquarePadding(img, borderRatio);
-    _saveJPG(img, outputPath);
+    _saveJPG(img, outputPath, 90);
     return img;
 }
 
