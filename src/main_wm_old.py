@@ -1,11 +1,8 @@
-from typing import Dict, Tuple
 import numpy as np
 import cv2 as cv
 import argparse
 import os
 from tqdm import tqdm
-
-from typing import Tuple, Dict, Union
 
 from . import utils
 

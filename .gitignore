@@ -142,3 +142,8 @@ img/
 
 *.jpg
 *.psd
+
+src/cpp/CMakeFiles
+src/cpp/CMakeCache.txt
+src/cpp/Makefile
+src/cpp/img_tool

@@ -1,8 +1,6 @@
 import cv2 as cv
-import numpy as np
 import argparse
 import os
-import time
 from colorama import Fore, Style
 from tqdm import tqdm
 
@@ -70,7 +68,7 @@ def main(args):
                     im = cv.imread(os.path.join(img_path, img), cv.IMREAD_UNCHANGED)
                     if not args.no_apparent:
                         im = wm_preset.add_watermark(wm_app, im,
-                                                      wm_pos=wm_app_pos, wm_scale=wm_app_scl, wm_ori=wm_app_ori)
+                                                     wm_pos=wm_app_pos, wm_scale=wm_app_scl, wm_ori=wm_app_ori)
                     if not args.no_dark:
                         im = wm_preset.add_watermark(wm_dark, im, wm_scale=wm_dark_scl)
 
@@ -80,7 +78,7 @@ def main(args):
             else:
                 if not args.no_apparent:
                     images = wm_preset.add_watermark(wm_app, images,
-                                                 wm_pos=wm_app_pos, wm_scale=wm_app_scl, wm_ori=wm_app_ori)
+                                                     wm_pos=wm_app_pos, wm_scale=wm_app_scl, wm_ori=wm_app_ori)
                 if not args.no_dark:
                     images = wm_preset.add_watermark(wm_dark, images, wm_scale=wm_dark_scl)
         elif args.watermark_mode == "text":
@@ -147,7 +145,8 @@ def main(args):
         else:
             images_ = []
             for img in tqdm(images):
-                images_.append(padding.padding(img, asp_ratio, args.border, True if args.padding_color == "white" else False))
+                images_.append(
+                    padding.padding(img, asp_ratio, args.border, True if args.padding_color == "white" else False))
             images = images_
 
     if run_mode == "together":
